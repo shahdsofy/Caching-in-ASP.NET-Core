@@ -1,4 +1,4 @@
-# 🚀 Caching in ASP.NET Core – Complete Guide
+# 🚀 Caching in ASP.NET Core 
 
 This README explains **everything related to caching** in ASP.NET Core with **clear concepts, diagrams, and real code examples**.
 
@@ -149,7 +149,6 @@ public async Task<Product> GetProductAsync(int id)
 }
 ```
 
----
 
 ## 🔹 Two-Level Caching (L1 / L2)
 
@@ -170,7 +169,7 @@ Store in L2 & L1
 Return Data
 ```
 
----
+
 
 ## 🔹 Tag-Based Cache Invalidation
 
@@ -185,7 +184,7 @@ _cache.Set("product_1", product, new MemoryCacheEntryOptions
 _cache.RemoveByTag("Products");
 ```
 
----
+
 
 ## 🔹 Configurable Serialization
 
@@ -197,7 +196,7 @@ await _redisCache.SetStringAsync("product_1", data);
 
 
 
----
+
 
 ---
 
