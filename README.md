@@ -400,7 +400,7 @@ finally
 
 > We prevent cache stampede using per-key async locks implemented with SemaphoreSlim. This ensures only one request fetches data from the database per cache key, while others wait asynchronously until the cache is populated.
 
----
+
 
 ---
 ## 🔹 TryGetValue vs GetOrCreateAsync
