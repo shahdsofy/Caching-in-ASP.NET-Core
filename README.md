@@ -1,6 +1,7 @@
 # 🚀 Caching in ASP.NET Core – Complete Guide
 
 This README explains **everything related to caching** in ASP.NET Core with **clear concepts, diagrams, and real code examples**.
+
 ---
 
 ## 📌 What is Caching?
@@ -111,67 +112,180 @@ public async Task<Product> GetProductAsync(int id)
 
 ---
 
-## 🔁 Cache-Aside Pattern (Most Common)
+## 🔹 Hybrid Caching 
 
-### Flow
+### Packages to Install
 
-1. Check cache
-2. If miss → read DB
-3. Store result in cache
-4. Return response
+```bash
+dotnet add package Microsoft.Extensions.Caching.Hybird
 
-### Update Handling
+```
+
+### Example Hybrid Code
 
 ```csharp
-await UpdateProductInDatabase(product);
-_cache.Remove($"product_{product.Id}");
+public async Task<Product> GetProductAsync(int id)
+{
+    string memKey = $"product_{id}";
+    string redisKey = $"product_{id}";
+
+    if (_memoryCache.TryGetValue(memKey, out Product product))
+        return product;
+
+    var redisData = await _redisCache.GetStringAsync(redisKey);
+    if (redisData != null)
+    {
+        product = JsonSerializer.Deserialize<Product>(redisData);
+        _memoryCache.Set(memKey, product, TimeSpan.FromMinutes(1));
+        return product;
+    }
+
+    product = await GetProductFromDatabase(id);
+
+    _memoryCache.Set(memKey, product, TimeSpan.FromMinutes(1));
+    await _redisCache.SetStringAsync(redisKey, JsonSerializer.Serialize(product));
+
+    return product;
+}
 ```
+
+---
+
+## 🔹 Two-Level Caching (L1 / L2)
+
+* **L1:** Fast in-memory cache (IMemoryCache)
+* **L2:** Distributed cache (Redis, SQL Server, etc.)
+
+```
+Request
+ ↓
+L1: Memory Cache ✅ → Hit → return
+ ↓
+L2: Redis Cache ❌ → Miss
+ ↓
+Database
+ ↓
+Store in L2 & L1
+ ↓
+Return Data
+```
+
+---
+
+## 🔹 Tag-Based Cache Invalidation
+
+```csharp
+_cache.Set("product_1", product, new MemoryCacheEntryOptions
+{
+    Tags = new[] { "Products" },
+    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
+});
+
+// مسح كل منتجات مرة واحدة
+_cache.RemoveByTag("Products");
+```
+
+---
+
+## 🔹 Configurable Serialization
+
+```csharp
+var data = JsonSerializer.Serialize(product);
+await _redisCache.SetStringAsync("product_1", data);
+```
+
+
+
+
+---
+
+---
+
+## 🔁 Cache-Aside Pattern (Most Common)
+
+### الفكرة الأساسية
+
+Cache-Aside هو نمط يتم فيه تحميل البيانات إلى الكاش عند الطلب فقط. خطواته:
+
+1. **Check Cache** → إذا موجودة ترجع مباشرة
+2. **Cache Miss** → Load from Database
+3. **Store in Cache** → حفظ الداتا في الكاش
+4. **Return Data** → إرجاع النتيجة للـ Request
+
+### الرسم الذهني
+
+```
+Request
+   ↓
+Memory Cache
+   ↓
+✔ Hit → return
+❌ Miss
+   ↓
+Database
+   ↓
+Cache
+   ↓
+Return Data
+```
+
+### مثال كود
+
+```csharp
+public async Task<Product> GetProductAsync(int id)
+{
+    if (!_cache.TryGetValue($"product_{id}", out Product product))
+    {
+        product = await GetProductFromDatabase(id);
+        _cache.Set($"product_{id}", product, TimeSpan.FromMinutes(5));
+    }
+    return product;
+}
+```
+
+### مميزات
+
+* بسيط وسهل للتطبيق
+* تحسين الأداء للطلبات التالية
+
+### عيوب
+
+* يحتاج Expiration Strategy واضحة
+* إذا عدة طلبات جت في نفس الوقت → ممكن يحصل **Cache Stampede**
 
 ---
 
 ## ⏱️ Cache Expiration Strategies
 
-### 1️⃣ Absolute Expiration 
+### 1️⃣ Absolute Expiration
 
-* الكاش ينتهي بعد مدة محددة مهما حصل.
-* بعد المدة → Cache Miss → Database
-
-#### مثال كود
+* ينتهي بعد مدة محددة مهما حصل
 
 ```csharp
-_cache.Set(
-    "product_1",
-    product,
-    new MemoryCacheEntryOptions
-    {
-        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
-    });
+_cache.Set("product_1", product, new MemoryCacheEntryOptions
+{
+    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
+});
 ```
 
-### 2️⃣ Sliding Expiration 
+### 2️⃣ Sliding Expiration
 
-* مدة الكاش تتجدد عند كل استخدام.
-* إذا لم يتم الوصول → تنتهي بعد المدة المحددة.
-
-#### مثال كود
+* تتجدد عند كل استخدام
 
 ```csharp
-_cache.Set(
-    "user_session_123",
-    sessionData,
-    new MemoryCacheEntryOptions
-    {
-        SlidingExpiration = TimeSpan.FromMinutes(20)
-    });
+_cache.Set("user_session_123", sessionData, new MemoryCacheEntryOptions
+{
+    SlidingExpiration = TimeSpan.FromMinutes(20)
+});
 ```
 
 ### الفرق بين Absolute و Sliding
 
-| النقطة    | Absolute Expiration | Sliding Expiration           |
-| --------- | ------------------- | ---------------------------- |
-| مدة الكاش | ثابتة               | تتجدد عند الاستخدام          |
-| مناسب لـ  | بيانات ثابتة        | جلسات أو بيانات متغيرة بكثرة |
-| بعد المدة | ينتهي               | ينتهي إذا لم يتم استخدامه    |
+| النقطة    | Absolute Expiration | Sliding Expiration        |
+| --------- | ------------------- | ------------------------- |
+| مدة الكاش | ثابتة               | تتجدد عند الاستخدام       |
+| مناسب لـ  | بيانات ثابتة        | جلسات أو بيانات متغيرة    |
+| بعد المدة | ينتهي               | ينتهي إذا لم يتم استخدامه |
 
 ### مثال عملي في GetOrCreateAsync
 
@@ -185,9 +299,6 @@ return await _cache.GetOrCreateAsync("product_1", entry =>
 });
 ```
 
-* AbsoluteExpiration → ينتهي بعد وقت محدد مهما حصل
-* SlidingExpiration → ينتهي بعد فترة من آخر استخدام
-
 ---
 
 ## 🔒 Concurrency & Thread Safety
@@ -198,25 +309,27 @@ return await _cache.GetOrCreateAsync("product_1", entry =>
 
 ---
 
-## 💥 What is Cache Stampede?
+## 💥 Cache Stampede Protection
 
-When:
+* مشكلة: كثير من الطلبات تجي على Key فاضي → Database overload
+* الحل: Per-Key Async Lock + SemaphoreSlim
 
-* Cache expires
-* Many requests arrive simultaneously
-* All hit the database
-
-❌ Result: Database overload
-
----
-
-## 🛡️ Cache Stampede Protection (Per-Key Async Lock)
-
-### Concept
-
-* Each cache key has its own lock
-* Only ONE request fetches from DB
-* Others wait asynchronously
+```csharp
+var semaphore = CacheLocks.Get(cacheKey);
+await semaphore.WaitAsync();
+try
+{
+    if (!_memoryCache.TryGetValue(cacheKey, out product))
+    {
+        product = await GetFromRedisOrDatabase(cacheKey);
+        _memoryCache.Set(cacheKey, product, TimeSpan.FromMinutes(5));
+    }
+}
+finally
+{
+    semaphore.Release();
+}
+```
 
 ---
 
@@ -290,6 +403,7 @@ finally
 
 ---
 
+---
 ## 🔹 TryGetValue vs GetOrCreateAsync
 
 ### TryGetValue
@@ -330,10 +444,22 @@ return await _cache.GetOrCreateAsync("key", async entry =>
 | Simple Projects     | ❌           | ✔                |
 | Complex Projects    | ✔           | ❌                |
 
-### Summary
 
-* **Use TryGetValue**: large projects, hybrid cache, Redis, high concurrency, cache stampede protection
-* **Use GetOrCreateAsync**: simple projects, single server, small apps
+
+* TryGetValue: manual, full control, مناسب للمشاريع الكبيرة و Hybrid cache
+* GetOrCreateAsync: أوتوماتيك، مناسب للبسيط
+
+---
+
+## 🔹 Redis vs IMemoryCache Comparison
+
+| Feature     | IMemoryCache | Redis      |
+| ----------- | ------------ | ---------- |
+| Speed       | Fastest      | Fast       |
+| Shared      | ❌ No         | ✅ Yes      |
+| Persistence | ❌ No         | ✅ Optional |
+| Scalability | Low          | High       |
+
 
 ---
 
@@ -358,39 +484,6 @@ All requests served from cache
 ```
 
 ---
-
-## 🔥 Redis vs IMemoryCache Comparison
-
-| Feature     | IMemoryCache | Redis      |
-| ----------- | ------------ | ---------- |
-| Speed       | Fastest      | Fast       |
-| Shared      | ❌ No         | ✅ Yes      |
-| Persistence | ❌ No         | ✅ Optional |
-| Scalability | Low          | High       |
-
----
-
-## 🧠 Hybrid Cache Strategy (Best Practice)
-
-```
-Request
- ↓
-Memory Cache
- ↓
-Redis
- ↓
-Database
-```
-
-✔ Fast
-✔ Scalable
-✔ Production-ready
-
----
-
-
-> We use hybrid caching with IMemoryCache and Redis, apply cache-aside pattern, handle expiration properly, and prevent cache stampede using per-key async locks with SemaphoreSlim to protect the database under high concurrency.
-
 ---
 
 ## ✅ Best Practices
