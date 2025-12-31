@@ -222,7 +222,7 @@ When:
 
 ## 🔑 SemaphoreSlim & Per-Key Async Locks (Simple Explanation)
 
-> **This section explains these two concepts in very simple wordsز**
+> **This section explains these two concepts in very simple words.**
 
 ### The Problem
 
